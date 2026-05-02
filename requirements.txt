@@ -1,0 +1,15 @@
+langchain==0.3.7
+langchain-huggingface==0.1.2
+langchain-community==0.3.5
+chromadb==0.4.24
+pypdf==4.0.1
+streamlit==1.31.0
+python-dotenv==1.0.1
+fpdf==1.7.2
+pydantic==2.9.2
+tiktoken==0.7.0
+scikit-learn==1.4.1.post1
+langchain-openai==0.2.8
+langchain-core
+langchain-text-splitters
+sentence-transformers
