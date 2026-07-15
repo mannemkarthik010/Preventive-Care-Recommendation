@@ -1,13 +1,13 @@
 import streamlit as st
-import json
-import os
+
 from agent import create_agent
+from schemas import PatientProfile
 
 st.set_page_config(page_title="Preventive Care Recommendation Agent", layout="wide")
 
 st.title("Cardiovascular Preventive Care Agent")
 st.markdown("""
-This application uses an Agentic AI-powered framework leveraging LangChain and
+This application uses an Agentic AI-powered framework leveraging LangChain, LangGraph, and
 a RAG knowledge base of clinical guidelines to generate personalized preventive care recommendations.
 """)
 
@@ -19,12 +19,20 @@ st.warning(
     icon="⚠️",
 )
 
-# Run DB init if needed (this would ideally be done offline)
+
 @st.cache_resource
 def load_agent():
     return create_agent()
 
-executor = load_agent()
+
+graph = load_agent()
+
+RISK_TIER_COLOR = {
+    "Low": "green",
+    "Borderline": "orange",
+    "Intermediate": "orange",
+    "High": "red",
+}
 
 with st.sidebar:
     st.header("Patient Data")
@@ -50,39 +58,71 @@ with st.sidebar:
         submit = st.form_submit_button("Generate Recommendation")
 
 if submit:
-    patient_json = {
-        "age": age,
-        "sex": sex,
-        "race": "black" if race.startswith("Black") else "white",
-        "total_cholesterol": chol,
-        "hdl_cholesterol": hdl,
-        "systolic_bp": sbp,
-        "smoker": smoker,
-        "diabetes": diabetes,
-        "bp_meds": bp_meds
-    }
-    
+    patient = PatientProfile(
+        age=age,
+        sex=sex.lower(),
+        race="black" if race.startswith("Black") else "white",
+        total_cholesterol=chol,
+        hdl_cholesterol=hdl,
+        systolic_bp=sbp,
+        smoker=smoker,
+        diabetes=diabetes,
+        bp_meds=bp_meds,
+    )
+
     st.write("### Patient Profile Submitted")
-    st.json(patient_json)
-    
+    st.json(patient.model_dump())
+
     with st.spinner("Agent is reasoning..."):
-        prompt = f"""
-        I have a patient with the following profile:
-        {json.dumps(patient_json, indent=2)}
-        
-        Please use your tools to:
-        1. Assess their ten-year cardiovascular risk.
-        2. Retrieve relevant guidelines for their profile.
-        3. Synthesize a structured recommendation.
-        4. Validate it using the SelfCritiqueTool.
-        Provide the final validated recommendation to me.
-        """
         try:
-            # We can capture the agent's intermediate steps if we want, but AgentExecutor with verbose=True outputs to console.
-            # In Streamlit, we could use StreamlitCallbackHandler, but we'll keep it simple here.
-            response = executor.invoke({"input": prompt})
+            result = graph.invoke({"patient": patient, "revision_count": 0})
+            risk = result["risk"]
+            plan = result["plan"]
+            citations = result.get("citations", [])
+            critique = result.get("critique")
+            revision_count = result.get("revision_count", 0)
+
             st.success("Recommendation Generated!")
             st.markdown("### Final Care Plan")
-            st.write(response["output"])
+
+            risk_col, meta_col = st.columns([1, 2])
+            with risk_col:
+                st.metric(
+                    "10-Year ASCVD Risk",
+                    f"{risk.risk_percentage}%",
+                    delta=risk.risk_tier,
+                    delta_color="off",
+                )
+            with meta_col:
+                st.caption(f"Method: {risk.method}")
+                if risk.out_of_validated_age_range:
+                    st.caption("⚠️ Patient age falls outside the equation's validated 40-79 range.")
+                if risk.race_approximated_as_white:
+                    st.caption("⚠️ Race approximated using White coefficients (guideline-recommended default).")
+                if critique is not None:
+                    status = "passed" if critique.passes else f"did not fully pass after {revision_count} revision(s) — showing best draft"
+                    st.caption(f"Self-critique {status}.")
+
+            sections = [
+                ("🩺 Screening", plan.screening),
+                ("🥗 Lifestyle", plan.lifestyle),
+                ("💊 Pharmacological", plan.pharmacological),
+                ("📅 Follow-up", plan.follow_up),
+            ]
+            cols = st.columns(2)
+            for i, (title, items) in enumerate(sections):
+                with cols[i % 2]:
+                    st.subheader(title)
+                    if items:
+                        for item in items:
+                            st.markdown(f"- {item}")
+                    else:
+                        st.markdown("_None indicated._")
+
+            if citations:
+                with st.expander(f"Guideline sources ({len(citations)})"):
+                    for c in citations:
+                        st.markdown(f"- {c.source} (page {c.page})")
+
         except Exception as e:
             st.error(f"An error occurred during agent execution: {str(e)}")
