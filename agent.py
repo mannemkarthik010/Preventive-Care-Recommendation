@@ -25,12 +25,18 @@ class AgentState(TypedDict, total=False):
     revision_count: int
 
 
+LLM_TIMEOUT_SECONDS = 90
+
+
 def _llm() -> ChatOpenAI:
     return ChatOpenAI(
         model=os.environ.get("HF_CHAT_MODEL"),
         base_url=os.environ.get("HF_CHAT_URL"),
         api_key=os.environ.get("HUGGINGFACEHUB_API_TOKEN"),
         temperature=0,
+        timeout=LLM_TIMEOUT_SECONDS,
+        max_retries=1,
+        max_tokens=1536,
     )
 
 
