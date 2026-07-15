@@ -9,14 +9,14 @@ from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
 # Local modules
-from utils import calculate_framingham_10yr_risk
+from utils import calculate_ascvd_10yr_risk
 from rag import get_vector_store
 
 load_dotenv()
 
 # --- Schemas ---
 class RiskAssessmentInput(BaseModel):
-    patient_data: str = Field(description='A JSON string containing the keys: "age", "sex", "total_cholesterol", "hdl_cholesterol", "systolic_bp", "smoker", "diabetes", "bp_meds"')
+    patient_data: str = Field(description='A JSON string containing the keys: "age", "sex", "race", "total_cholesterol", "hdl_cholesterol", "systolic_bp", "smoker", "diabetes", "bp_meds"')
 
 class GuidelineRAGInput(BaseModel):
     query: str = Field(description="Medical query to search within the guidelines.")
@@ -30,7 +30,7 @@ class SelfCritiqueInput(BaseModel):
 # --- Tools ---
 class RiskAssessmentTool(BaseTool):
     name: str = "RiskAssessmentTool"
-    description: str = 'Computes a Framingham-based cardiovascular risk score from patient vitals. Input MUST be a valid JSON string with keys "age", "sex", "total_cholesterol", "hdl_cholesterol", "systolic_bp", "smoker", "diabetes", "bp_meds".'
+    description: str = 'Computes 10-year ASCVD risk via the 2013 ACC/AHA Pooled Cohort Equations. Input MUST be a valid JSON string with keys "age", "sex", "race" ("white" or "black"), "total_cholesterol", "hdl_cholesterol", "systolic_bp", "smoker", "diabetes", "bp_meds". Validated for ages 40-79.'
     args_schema: Type[BaseModel] = RiskAssessmentInput
 
     def _run(self, patient_data: str) -> str:
@@ -38,17 +38,18 @@ class RiskAssessmentTool(BaseTool):
             data = json.loads(patient_data)
         except Exception:
             return "Error: Input MUST be a valid JSON string containing the patient vitals."
-            
+
         age = int(data.get("age", 0))
         sex = str(data.get("sex", "male"))
+        race = str(data.get("race", "white"))
         total_cholesterol = float(data.get("total_cholesterol", 0))
         hdl_cholesterol = float(data.get("hdl_cholesterol", 0))
         systolic_bp = float(data.get("systolic_bp", 0))
         smoker = bool(data.get("smoker", False))
         diabetes = bool(data.get("diabetes", False))
         bp_meds = bool(data.get("bp_meds", False))
-            
-        res = calculate_framingham_10yr_risk(age, sex, total_cholesterol, hdl_cholesterol, systolic_bp, smoker, diabetes, bp_meds)
+
+        res = calculate_ascvd_10yr_risk(age, sex, total_cholesterol, hdl_cholesterol, systolic_bp, smoker, diabetes, bp_meds, race=race)
         return json.dumps(res)
 
 class GuidelineRAGTool(BaseTool):
